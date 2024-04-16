@@ -5,7 +5,6 @@ from telebot import types
 import time
 import threading
 import re
-from flask import Flask, request
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
 HEADERS = {
@@ -20,23 +19,6 @@ bot = telebot.TeleBot(TOKEN)
 subscribed_chats = set()
 last_seen_hashes = set()
 
-app = Flask(__name__)
-
-@app.route('/' + TOKEN, methods=['POST'])
-def getMessage():
-    bot.process_new_updates([types.Update.de_json(request.stream.read().decode("utf-8"))])
-    return "!", 200
-
-@app.route("/")
-def webhook():
-    bot.remove_webhook()
-    bot.set_webhook(url='https://botpar2.herokuapp.com/' + TOKEN)
-    return "!", 200
-
-# ... ваш код ...
-
-if __name__ == '__main__':
-    app.run(threaded=True)
 
 def fetch_new_listings():
     try:
