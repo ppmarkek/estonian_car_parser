@@ -1,1 +1,1 @@
-worker: python3 par.py
+web: python3 par.py
