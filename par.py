@@ -14,8 +14,8 @@ HEADERS = {
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
-CHECK_INTERVAL = 5
-MAX_HASHES = 1000 
+CHECK_INTERVAL = 1
+MAX_HASHES = 1000  # Ограничение количества сохраняемых data-hsh
 
 bot = telebot.TeleBot(TOKEN)
 subscribed_chats = set()
@@ -34,30 +34,63 @@ def fetch_new_listings():
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
+
+        # Получаем текущий набор хэшей из объявлений на странице
         current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
+
+        # Определяем новые и удалённые хэши
         new_hashes = current_hashes.difference(last_seen_hashes)
         removed_hashes = last_seen_hashes.difference(current_hashes)
 
-        # Обновляем last_seen_hashes
-        last_seen_hashes.symmetric_difference_update(removed_hashes)
+        # Обновляем список last_seen_hashes, удаляя устаревшие и добавляя новые хэши
+        last_seen_hashes.difference_update(removed_hashes)
         last_seen_hashes.update(new_hashes)
 
-        # Управление размером last_seen_hashes
-        if len(last_seen_hashes) > MAX_HASHES:
-            last_seen_hashes = set(list(last_seen_hashes)[:MAX_HASHES])
-
-        # Обработка новых объявлений
+        # Проходим по элементам страницы и собираем информацию только по новым объявлениям
         for el in soup.select('.result-row.item-odd.v-log.item-first'):
             data_hash = el.get('data-hsh', None)
             if data_hash in new_hashes:
-                # Собираем информацию о новых объявлениях (схема парсинга как в исходном коде)
-                # ...
-                new_listings.append(listing_info)
+                title = el.select('.description > .title > a > span')
+                finance = el.select_one('.description > .finance > .pv > .price')
+                extra_year = el.select_one('.description > .extra > .year')
+                extra_mileage = el.select_one('.description > .extra > .mileage')
+                extra_fuel = el.select_one('.description > .extra > .fuel')
+                extra_transmission = el.select_one('.description > .extra > .transmission')
+                extra_bodytype = el.select_one('.description > .extra > .bodytype')
+                extra_drive = el.select_one('.description > .extra > .drive')
+                link_element = el.select_one('a.row-link')
+                full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
 
+                image_element = el.select_one('span.thumb')
+                image_url = None
+                if image_element:
+                    style_attr = image_element.get('style', '')
+                    match = re.search(r"url\('(.+?)'\)", style_attr)
+                    if match:
+                        image_url = match.group(1)
+
+                # Собираем информацию о листинге, если есть заголовок
+                if title and len(title) >= 4:
+                    listing_info = {
+                        'name': title[0].text.strip() if title[0] else "",
+                        'model': title[2].text.strip() if title[2] else "",
+                        'engine': title[3].text.strip() if title[3] else "",
+                        'finance_info': finance.text.strip() if finance else "Финансы не указаны",
+                        'year_info': extra_year.text.strip() if extra_year else "",
+                        'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
+                        'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
+                        'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
+                        'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
+                        'drive_info': extra_drive.text.strip() if extra_drive else "",
+                        'link': full_link,
+                        'image_url': image_url
+                    }
+                    new_listings.append(listing_info)
         return new_listings
     except requests.RequestException as e:
         print(f"Ошибка при получении списка: {e}")
         return []
+
 
 def notify_subscribers(listings):
     for chat_id in subscribed_chats:
