@@ -14,7 +14,8 @@ HEADERS = {
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
-CHECK_INTERVAL = 1
+CHECK_INTERVAL = 10
+last_seen_hashes = []
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -36,13 +37,13 @@ def fetch_new_listings():
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
 
-        current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
+        current_hashes = [el.get('data-hsh') for el in soup.select('.result-row') if el.get('data-hsh')]
+        new_hashes = [hsh for hsh in current_hashes if hsh not in last_seen_hashes]
 
-        new_hashes = current_hashes.difference(last_seen_hashes)
-        removed_hashes = last_seen_hashes.difference(current_hashes)
+        last_seen_hashes[0:0] = new_hashes
 
-        last_seen_hashes.difference_update(removed_hashes)
-        last_seen_hashes.update(new_hashes)
+        if len(last_seen_hashes) > 100:
+            del last_seen_hashes[100:]
 
         for el in soup.select('.result-row'):
             data_hash = el.get('data-hsh', None)
