@@ -1,4 +1,6 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import telebot
 from telebot import types
@@ -12,17 +14,24 @@ HEADERS = {
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
-CHECK_INTERVAL = 1
+CHECK_INTERVAL = 60
 
 bot = telebot.TeleBot(TOKEN)
 
 subscribed_chats = set()
 last_seen_hashes = set()
 
+def create_session():
+    session = requests.Session()
+    retries = Retry(total=5, backoff_factor=1, status_forcelist=[ 502, 503, 504 ])
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    return session
+
 
 def fetch_new_listings():
+    session = create_session()
     try:
-        response = requests.get(URL, headers=HEADERS)
+        response = session.get(URL, headers=HEADERS)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
