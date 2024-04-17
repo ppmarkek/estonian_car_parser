@@ -34,68 +34,66 @@ def create_session(proxy=None):
 
 
 def fetch_new_listings():
-    for proxy in proxy_list:
-        session = create_session(proxy)
-        try:
-            response = session.get(URL, headers=HEADERS)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-            new_listings = []
+    session = create_session()
+    try:
+        response = session.get(URL, headers=HEADERS)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+        new_listings = []
 
-            current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
+        current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
 
-            new_hashes = current_hashes.difference(last_seen_hashes)
-            removed_hashes = last_seen_hashes.difference(current_hashes)
+        new_hashes = current_hashes.difference(last_seen_hashes)
+        removed_hashes = last_seen_hashes.difference(current_hashes)
 
-            last_seen_hashes.difference_update(removed_hashes)
-            last_seen_hashes.update(new_hashes)
+        last_seen_hashes.difference_update(removed_hashes)
+        last_seen_hashes.update(new_hashes)
 
-            for el in soup.select('.result-row.item-odd.v-log.item-first'):
-                data_hash = el.get('data-hsh', None)
-                if data_hash in new_hashes:
-                    title = el.select('.description > .title > a > span')
-                    finance = el.select_one('.description > .finance > .pv > .price')
-                    extra_year = el.select_one('.description > .extra > .year')
-                    extra_mileage = el.select_one('.description > .extra > .mileage')
-                    extra_fuel = el.select_one('.description > .extra > .fuel')
-                    extra_transmission = el.select_one('.description > .extra > .transmission')
-                    extra_bodytype = el.select_one('.description > .extra > .bodytype')
-                    extra_drive = el.select_one('.description > .extra > .drive')
-                    link_element = el.select_one('a.row-link')
-                    full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
+        for el in soup.select('.result-row.item-odd.v-log.item-first'):
+            data_hash = el.get('data-hsh', None)
+            if data_hash in new_hashes:
+                title = el.select('.description > .title > a > span')
+                finance = el.select_one('.description > .finance > .pv > .price')
+                extra_year = el.select_one('.description > .extra > .year')
+                extra_mileage = el.select_one('.description > .extra > .mileage')
+                extra_fuel = el.select_one('.description > .extra > .fuel')
+                extra_transmission = el.select_one('.description > .extra > .transmission')
+                extra_bodytype = el.select_one('.description > .extra > .bodytype')
+                extra_drive = el.select_one('.description > .extra > .drive')
+                link_element = el.select_one('a.row-link')
+                full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
 
-                    image_element = el.select_one('span.thumb')
-                    image_url = None
-                    if image_element:
-                        style_attr = image_element.get('style', '')
-                        match = re.search(r"url\('(.+?)'\)", style_attr)
-                        if match:
-                            image_url = match.group(1)
+                image_element = el.select_one('span.thumb')
+                image_url = None
+                if image_element:
+                    style_attr = image_element.get('style', '')
+                    match = re.search(r"url\('(.+?)'\)", style_attr)
+                    if match:
+                        image_url = match.group(1)
 
-                    # Собираем информацию о листинге, если есть заголовок
-                    if title and len(title) >= 4:
-                        listing_info = {
-                            'name': title[0].text.strip() if title[0] else "",
-                            'model': title[2].text.strip() if title[2] else "",
-                            'engine': title[3].text.strip() if title[3] else "",
-                            'finance_info': finance.text.strip() if finance else "Финансы не указаны",
-                            'year_info': extra_year.text.strip() if extra_year else "",
-                            'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
-                            'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
-                            'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
-                            'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
-                            'drive_info': extra_drive.text.strip() if extra_drive else "",
-                            'link': full_link,
-                            'image_url': image_url
-                        }
-                        new_listings.append(listing_info)
-            return new_listings
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
-                print("Доступ запрещен, попробуйте использовать другой User-Agent или прокси.")
-            else:
-                print(f"Ошибка при получении списка: {e}")
-            return []
+                if title and len(title) >= 4:
+                    listing_info = {
+                        'name': title[0].text.strip() if title[0] else "",
+                        'model': title[2].text.strip() if title[2] else "",
+                        'engine': title[3].text.strip() if title[3] else "",
+                        'finance_info': finance.text.strip() if finance else "Финансы не указаны",
+                        'year_info': extra_year.text.strip() if extra_year else "",
+                        'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
+                        'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
+                        'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
+                        'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
+                        'drive_info': extra_drive.text.strip() if extra_drive else "",
+                        'link': full_link,
+                        'image_url': image_url
+                    }
+                    new_listings.append(listing_info)
+        return new_listings
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            print("Доступ запрещен, попробуйте использовать другой User-Agent или прокси.")
+        else:
+            print(f"Ошибка при получении списка: {e}")
+        return []
 
 
 
