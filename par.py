@@ -10,7 +10,7 @@ import re
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Linux; Linux i571 x86_64; en-US) AppleWebKit/537.44 (KHTML, like Gecko) Chrome/48.0.2862.227 Safari/537'
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
@@ -139,4 +139,8 @@ def schedule_fetch():
 if __name__ == '__main__':
     thread = threading.Thread(target=schedule_fetch)
     thread.start()
-    bot.polling(non_stop=True)
+    
+    try:
+        bot.polling(non_stop=True)
+    except Exception as e:
+        print(f"Ошибка при запуске бота: {e}")
