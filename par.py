@@ -14,8 +14,7 @@ HEADERS = {
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
-CHECK_INTERVAL = 10
-last_seen_hashes = []
+CHECK_INTERVAL = 20
 
 bot = telebot.TeleBot(TOKEN)
 
