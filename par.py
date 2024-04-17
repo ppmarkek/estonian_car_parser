@@ -10,16 +10,16 @@ import re
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.150 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
 CHECK_INTERVAL = 1
 
 bot = telebot.TeleBot(TOKEN)
+last_seen_hashes = []
 
 subscribed_chats = set()
-last_seen_hashes = set()
 
 def create_session():
     session = requests.Session()
@@ -29,6 +29,7 @@ def create_session():
 
 
 def fetch_new_listings():
+    global last_seen_hashes
     session = create_session()
     try:
         response = session.get(URL, headers=HEADERS)
@@ -39,7 +40,7 @@ def fetch_new_listings():
         current_hashes = [el.get('data-hsh') for el in soup.select('.result-row') if el.get('data-hsh')]
         new_hashes = [hsh for hsh in current_hashes if hsh not in last_seen_hashes]
 
-        last_seen_hashes[0:0] = new_hashes
+        last_seen_hashes = [hsh for hsh in new_hashes if hsh not in last_seen_hashes] + last_seen_hashes
 
         if len(last_seen_hashes) > 100:
             del last_seen_hashes[100:]
