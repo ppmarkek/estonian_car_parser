@@ -10,83 +10,92 @@ import re
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
 }
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
 CHECK_INTERVAL = 1
 
 bot = telebot.TeleBot(TOKEN)
-last_seen_hashes = []
 
 subscribed_chats = set()
+last_seen_hashes = set()
 
-def create_session():
+def create_session(proxy=None):
     session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[ 502, 503, 504 ])
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
     session.mount('https://', HTTPAdapter(max_retries=retries))
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15'
+    })
+    if proxy:
+        session.proxies.update(proxy)
     return session
 
 
 def fetch_new_listings():
-    global last_seen_hashes
-    session = create_session()
-    try:
-        response = session.get(URL, headers=HEADERS)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        new_listings = []
+    for proxy in proxy_list:
+        session = create_session(proxy)
+        try:
+            response = session.get(URL, headers=HEADERS)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            new_listings = []
 
-        current_hashes = [el.get('data-hsh') for el in soup.select('.result-row') if el.get('data-hsh')]
-        new_hashes = [hsh for hsh in current_hashes if hsh not in last_seen_hashes]
+            current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
 
-        last_seen_hashes = [hsh for hsh in new_hashes if hsh not in last_seen_hashes] + last_seen_hashes
+            new_hashes = current_hashes.difference(last_seen_hashes)
+            removed_hashes = last_seen_hashes.difference(current_hashes)
 
-        if len(last_seen_hashes) > 100:
-            del last_seen_hashes[100:]
+            last_seen_hashes.difference_update(removed_hashes)
+            last_seen_hashes.update(new_hashes)
 
-        for el in soup.select('.result-row'):
-            data_hash = el.get('data-hsh', None)
-            if data_hash in new_hashes:
-                title = el.select('.description > .title > a > span')
-                finance = el.select_one('.description > .finance > .pv > .price')
-                extra_year = el.select_one('.description > .extra > .year')
-                extra_mileage = el.select_one('.description > .extra > .mileage')
-                extra_fuel = el.select_one('.description > .extra > .fuel')
-                extra_transmission = el.select_one('.description > .extra > .transmission')
-                extra_bodytype = el.select_one('.description > .extra > .bodytype')
-                extra_drive = el.select_one('.description > .extra > .drive')
-                link_element = el.select_one('a.row-link')
-                full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
+            for el in soup.select('.result-row.item-odd.v-log.item-first'):
+                data_hash = el.get('data-hsh', None)
+                if data_hash in new_hashes:
+                    title = el.select('.description > .title > a > span')
+                    finance = el.select_one('.description > .finance > .pv > .price')
+                    extra_year = el.select_one('.description > .extra > .year')
+                    extra_mileage = el.select_one('.description > .extra > .mileage')
+                    extra_fuel = el.select_one('.description > .extra > .fuel')
+                    extra_transmission = el.select_one('.description > .extra > .transmission')
+                    extra_bodytype = el.select_one('.description > .extra > .bodytype')
+                    extra_drive = el.select_one('.description > .extra > .drive')
+                    link_element = el.select_one('a.row-link')
+                    full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
 
-                image_element = el.select_one('span.thumb')
-                image_url = None
-                if image_element:
-                    style_attr = image_element.get('style', '')
-                    match = re.search(r"url\('(.+?)'\)", style_attr)
-                    if match:
-                        image_url = match.group(1)
+                    image_element = el.select_one('span.thumb')
+                    image_url = None
+                    if image_element:
+                        style_attr = image_element.get('style', '')
+                        match = re.search(r"url\('(.+?)'\)", style_attr)
+                        if match:
+                            image_url = match.group(1)
 
-                if title and len(title) >= 4:
-                    listing_info = {
-                        'name': title[0].text.strip() if title[0] else "",
-                        'model': title[2].text.strip() if title[2] else "",
-                        'engine': title[3].text.strip() if title[3] else "",
-                        'finance_info': finance.text.strip() if finance else "Финансы не указаны",
-                        'year_info': extra_year.text.strip() if extra_year else "",
-                        'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
-                        'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
-                        'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
-                        'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
-                        'drive_info': extra_drive.text.strip() if extra_drive else "",
-                        'link': full_link,
-                        'image_url': image_url
-                    }
-                    new_listings.append(listing_info)
-        return new_listings
-    except requests.RequestException as e:
-        print(f"Ошибка при получении списка: {e}")
-        return []
+                    # Собираем информацию о листинге, если есть заголовок
+                    if title and len(title) >= 4:
+                        listing_info = {
+                            'name': title[0].text.strip() if title[0] else "",
+                            'model': title[2].text.strip() if title[2] else "",
+                            'engine': title[3].text.strip() if title[3] else "",
+                            'finance_info': finance.text.strip() if finance else "Финансы не указаны",
+                            'year_info': extra_year.text.strip() if extra_year else "",
+                            'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
+                            'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
+                            'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
+                            'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
+                            'drive_info': extra_drive.text.strip() if extra_drive else "",
+                            'link': full_link,
+                            'image_url': image_url
+                        }
+                        new_listings.append(listing_info)
+            return new_listings
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                print("Доступ запрещен, попробуйте использовать другой User-Agent или прокси.")
+            else:
+                print(f"Ошибка при получении списка: {e}")
+            return []
 
 
 
@@ -140,8 +149,4 @@ def schedule_fetch():
 if __name__ == '__main__':
     thread = threading.Thread(target=schedule_fetch)
     thread.start()
-    
-    try:
-        bot.polling(non_stop=True)
-    except Exception as e:
-        print(f"Ошибка при запуске бота: {e}")
+    bot.polling(non_stop=True)
