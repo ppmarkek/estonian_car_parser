@@ -21,15 +21,10 @@ bot = telebot.TeleBot(TOKEN)
 subscribed_chats = set()
 last_seen_hashes = set()
 
-def create_session(proxy=None):
+def create_session():
     session = requests.Session()
-    retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
+    retries = Retry(total=5, backoff_factor=1, status_forcelist=[ 502, 503, 504 ])
     session.mount('https://', HTTPAdapter(max_retries=retries))
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15'
-    })
-    if proxy:
-        session.proxies.update(proxy)
     return session
 
 
@@ -40,61 +35,62 @@ def fetch_new_listings():
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
-
-        current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
-
-        new_hashes = current_hashes.difference(last_seen_hashes)
-        removed_hashes = last_seen_hashes.difference(current_hashes)
-
-        last_seen_hashes.difference_update(removed_hashes)
-        last_seen_hashes.update(new_hashes)
-
         for el in soup.select('.result-row.item-odd.v-log.item-first'):
             data_hash = el.get('data-hsh', None)
-            if data_hash in new_hashes:
-                title = el.select('.description > .title > a > span')
-                finance = el.select_one('.description > .finance > .pv > .price')
-                extra_year = el.select_one('.description > .extra > .year')
-                extra_mileage = el.select_one('.description > .extra > .mileage')
-                extra_fuel = el.select_one('.description > .extra > .fuel')
-                extra_transmission = el.select_one('.description > .extra > .transmission')
-                extra_bodytype = el.select_one('.description > .extra > .bodytype')
-                extra_drive = el.select_one('.description > .extra > .drive')
-                link_element = el.select_one('a.row-link')
-                full_link = f"https://rus.auto24.ee{link_element['href']}" if link_element and link_element.has_attr('href') else "Ссылка не найдена"
+            title = el.select('.description > .title > a > span')
+            finance = el.select_one('.description > .finance > .pv > .price')
+            extra_year = el.select_one('.description > .extra > .year')
+            extra_mileage = el.select_one('.description > .extra > .mileage')
+            extra_fuel = el.select_one('.description > .extra > .fuel')
+            extra_transmission = el.select_one('.description > .extra > .transmission')
+            extra_bodytype = el.select_one('.description > .extra > .bodytype')
+            extra_drive = el.select_one('.description > .extra > .drive')
+            link_element = el.select_one('a.row-link')
+            if link_element and link_element.has_attr('href'):
+                link_path = link_element['href']
+                full_link = f"https://rus.auto24.ee{link_path}"
+            else:
+                full_link = "Ссылка не найдена"
+            image_element = el.select_one('span.thumb')
+            image_url = None
+            if image_element:
+                style_attr = image_element.get('style', '')
+                match = re.search(r"url\('(.+?)'\)", style_attr)
+            if match:
+                image_url = match.group(1)
 
-                image_element = el.select_one('span.thumb')
-                image_url = None
-                if image_element:
-                    style_attr = image_element.get('style', '')
-                    match = re.search(r"url\('(.+?)'\)", style_attr)
-                    if match:
-                        image_url = match.group(1)
+            if title and len(title) >= 4 and data_hash and data_hash not in last_seen_hashes:
+                name = title[0].text.strip() if title[0] else ""
+                model = title[2].text.strip() if title[2] else ""
+                engine = title[3].text.strip() if title[3] else ""
+                finance_info = finance.text.strip() if finance else "Финансы не указаны"
+                year_info = extra_year.text.strip() if extra_year else ""
+                mileage_info = extra_mileage.text.strip() if extra_mileage else ""
+                fuel_info = extra_fuel.text.strip() if extra_fuel else ""
+                transmission_info = extra_transmission.text.strip() if extra_transmission else ""
+                bodytype_info = extra_bodytype.text.strip() if extra_bodytype else ""
+                drive_info = extra_drive.text.strip() if extra_drive else ""
 
-                if title and len(title) >= 4:
-                    listing_info = {
-                        'name': title[0].text.strip() if title[0] else "",
-                        'model': title[2].text.strip() if title[2] else "",
-                        'engine': title[3].text.strip() if title[3] else "",
-                        'finance_info': finance.text.strip() if finance else "Финансы не указаны",
-                        'year_info': extra_year.text.strip() if extra_year else "",
-                        'mileage_info': extra_mileage.text.strip() if extra_mileage else "",
-                        'fuel_info': extra_fuel.text.strip() if extra_fuel else "",
-                        'transmission_info': extra_transmission.text.strip() if extra_transmission else "",
-                        'bodytype_info': extra_bodytype.text.strip() if extra_bodytype else "",
-                        'drive_info': extra_drive.text.strip() if extra_drive else "",
-                        'link': full_link,
-                        'image_url': image_url
-                    }
-                    new_listings.append(listing_info)
+                listing_info = {
+                    'name': name,
+                    'model': model,
+                    'engine': engine,
+                    'finance_info': finance_info,
+                    'year_info': year_info,
+                    'mileage_info': mileage_info,
+                    'fuel_info': fuel_info,
+                    'transmission_info': transmission_info,
+                    'bodytype_info': bodytype_info,
+                    'drive_info': drive_info,
+                    'link': full_link,
+                    'image_url': image_url
+                }
+                new_listings.append(listing_info)
+                last_seen_hashes.add(data_hash)
         return new_listings
-    except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 403:
-            print("Доступ запрещен, попробуйте использовать другой User-Agent или прокси.")
-        else:
-            print(f"Ошибка при получении списка: {e}")
+    except requests.RequestException as e:
+        print(f"Ошибка при получении списка: {e}")
         return []
-
 
 
 def notify_subscribers(listings):
