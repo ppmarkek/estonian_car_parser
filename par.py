@@ -15,17 +15,21 @@ HEADERS = {
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
 CHECK_INTERVAL = 1
-MAX_HASHES = 1000  # Ограничение количества сохраняемых data-hsh
 
 bot = telebot.TeleBot(TOKEN)
+
 subscribed_chats = set()
 last_seen_hashes = set()
 
 def create_session():
     session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
+    retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504, 403])
     session.mount('https://', HTTPAdapter(max_retries=retries))
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15'
+    })
     return session
+
 
 def fetch_new_listings():
     session = create_session()
@@ -35,18 +39,14 @@ def fetch_new_listings():
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
 
-        # Получаем текущий набор хэшей из объявлений на странице
         current_hashes = {el.get('data-hsh') for el in soup.select('.result-row.item-odd.v-log.item-first') if el.get('data-hsh')}
 
-        # Определяем новые и удалённые хэши
         new_hashes = current_hashes.difference(last_seen_hashes)
         removed_hashes = last_seen_hashes.difference(current_hashes)
 
-        # Обновляем список last_seen_hashes, удаляя устаревшие и добавляя новые хэши
         last_seen_hashes.difference_update(removed_hashes)
         last_seen_hashes.update(new_hashes)
 
-        # Проходим по элементам страницы и собираем информацию только по новым объявлениям
         for el in soup.select('.result-row.item-odd.v-log.item-first'):
             data_hash = el.get('data-hsh', None)
             if data_hash in new_hashes:
@@ -87,9 +87,13 @@ def fetch_new_listings():
                     }
                     new_listings.append(listing_info)
         return new_listings
-    except requests.RequestException as e:
-        print(f"Ошибка при получении списка: {e}")
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            print("Доступ запрещен, попробуйте использовать другой User-Agent или прокси.")
+        else:
+            print(f"Ошибка при получении списка: {e}")
         return []
+
 
 
 def notify_subscribers(listings):
@@ -100,10 +104,11 @@ def notify_subscribers(listings):
                             f"{listing['year_info']} | {listing['mileage_info']} | {listing['fuel_info']} | "
                             f"{listing['transmission_info']} | {listing['bodytype_info']} | {listing['drive_info']}\n"
                             f"Ссылка: {listing['link']}")
-            if listing.get('image_url'):
+            if listing['image_url']:
                 bot.send_photo(chat_id, photo=listing['image_url'], caption=message_text)
             else:
                 bot.send_message(chat_id, message_text)
+
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
