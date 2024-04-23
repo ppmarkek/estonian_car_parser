@@ -1,12 +1,12 @@
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import telebot
 from telebot import types
 import time
 import threading
 import re
+import tkinter as tk
+from threading import Thread
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
 HEADERS = {
@@ -17,21 +17,14 @@ TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
 CHECK_INTERVAL = 1
 
 bot = telebot.TeleBot(TOKEN)
+bot_running = False
 
 subscribed_chats = set()
 last_seen_hashes = set()
 
-def create_session():
-    session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[ 502, 503, 504 ])
-    session.mount('https://', HTTPAdapter(max_retries=retries))
-    return session
-
-
 def fetch_new_listings():
-    session = create_session()
     try:
-        response = session.get(URL, headers=HEADERS)
+        response = requests.get(URL, headers=HEADERS)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         new_listings = []
@@ -140,7 +133,45 @@ def schedule_fetch():
             notify_subscribers(new_listings)
         time.sleep(CHECK_INTERVAL)
 
-if __name__ == '__main__':
-    thread = threading.Thread(target=schedule_fetch)
-    thread.start()
-    bot.polling(non_stop=True)
+def start_bot():
+    global bot_running
+    if not bot_running:
+        bot_running = True
+        bot.polling(non_stop=True)
+
+def stop_bot():
+    global bot_running
+    if bot_running:
+        bot.stop_polling()
+        bot_running = False
+
+class BotController:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Telegram Bot Control")
+
+        self.start_button = tk.Button(root, text="Start Bot", command=self.start_thread, bg='green', fg='white')
+        self.start_button.pack(pady=20, padx=20, ipadx=10, ipady=10)
+
+        self.stop_button = tk.Button(root, text="Stop Bot", command=self.stop_thread, bg='red', fg='white')
+        self.stop_button.pack(pady=20, padx=20, ipadx=10, ipady=10)
+
+        self.status_label = tk.Label(root, text="Bot is stopped", fg="red")
+        self.status_label.pack(pady=10)
+
+    def start_thread(self):
+        if not bot_running:
+            self.bot_thread = Thread(target=start_bot)
+            self.bot_thread.start()
+            self.status_label.config(text="Bot is running", fg="green")
+
+    def stop_thread(self):
+        stop_bot()
+        if self.bot_thread.is_alive():
+            self.bot_thread.join()
+        self.status_label.config(text="Bot is stopped", fg="red")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = BotController(root)
+    root.mainloop()
