@@ -5,13 +5,13 @@ from telebot import types
 import time
 import threading
 import re
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
 import tkinter as tk
 from tkinter import messagebox
 
 URL = 'https://rus.auto24.ee/kasutatud/nimekiri.php?bn=2&a=100&ae=1&af=50&otsi=%D0%BF%D0%BE%D0%B8%D1%81%D0%BA20(31878)&ak=0'
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'
-}
 
 TOKEN = '7055872752:AAF9oKANnV51UkgzPVoNkI8rQKkg5V7s5DQ'
 CHECK_INTERVAL = 1
@@ -23,12 +23,15 @@ last_seen_hashes = set()
 stop_thread = False
 status_label = None
 
-def fetch_new_listings():
+def fetch_new_listings_with_browser():
+    options = Options()
+    options.headless = True
+    driver = webdriver.Chrome(options=options)
     while not stop_thread:
         try:
-            response = requests.get(URL, headers=HEADERS)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
+            driver.get(URL)
+            page_content = driver.page_source
+            soup = BeautifulSoup(page_content, 'html.parser')
             new_listings = []
             for el in soup.select('.result-row.item-odd.v-log.item-first'):
                 data_hash = el.get('data-hsh', None)
@@ -85,9 +88,10 @@ def fetch_new_listings():
             if new_listings:
                 notify_subscribers(new_listings)
             time.sleep(CHECK_INTERVAL)
-        except requests.RequestException as e:
+        except Exception as e:
             print(f"Error fetching listings: {e}")
             time.sleep(CHECK_INTERVAL)
+    driver.quit()
 
 def notify_subscribers(listings):
     for chat_id in subscribed_chats:
@@ -136,7 +140,7 @@ def start_bot():
     global stop_thread, status_label
     stop_thread = False
     threading.Thread(target=bot_polling).start()
-    threading.Thread(target=fetch_new_listings).start()
+    threading.Thread(target=fetch_new_listings_with_browser).start()
     if status_label:
         status_label.config(text="Bot is running", fg="green")
 
@@ -147,10 +151,18 @@ def stop_bot():
     if status_label:
         status_label.config(text="Bot is stopped", fg="red")
 
+def handle_keypress(event):
+    if event.keysym == 'F1':
+        start_bot()
+    elif event.keysym == 'F2':
+        stop_bot()
+
 def create_gui():
     global status_label
     root = tk.Tk()
     root.title("Telegram Bot Controller")
+    root.bind('<KeyPress-F1>', handle_keypress)
+    root.bind('<KeyPress-F2>', handle_keypress)
 
     start_button = tk.Button(root, text="Start Bot", command=start_bot, bg='green', fg='white')
     start_button.pack(pady=20, padx=20)
